@@ -17,6 +17,9 @@ const getSentRecipes = () => JSON.parse(fs.readFileSync(SENT_DB));
 const saveSentRecipe = (id) => {
     const db = getSentRecipes();
     db.push(id);
+    fs.writeFileSync(SENT_DB, JSON.stringify(db.slice(-100))); // Manteniamo solo gli ultimi 100 per leggerezza
+};
+
 let lastQr = null;
 let botStatus = 'Initializing... ⚙️';
 

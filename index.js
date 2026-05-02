@@ -17,10 +17,8 @@ const getSentRecipes = () => JSON.parse(fs.readFileSync(SENT_DB));
 const saveSentRecipe = (id) => {
     const db = getSentRecipes();
     db.push(id);
-    fs.writeFileSync(SENT_DB, JSON.stringify(db.slice(-100))); // Manteniamo solo gli ultimi 100 per leggerezza
-};
-
 let lastQr = null;
+let botStatus = 'Initializing... ⚙️';
 
 // --- WEB INTERFACE PER RAILWAY ---
 app.get('/', (req, res) => {
@@ -36,12 +34,23 @@ app.get('/', (req, res) => {
                         <script>new QRCode(document.getElementById("qrcode"), { text: "${lastQr}", width: 256, height: 256 });</script>
                         <p style="color:#666; font-size:0.9em;">Dispositivi collegati > Collega un dispositivo</p>
                     </div>
-                    <script>setTimeout(() => location.reload(), 30000);</script>
+                    <script>setTimeout(() => location.reload(), 15000);</script>
                 </body>
             </html>
         `);
     } else {
-        res.send('<h1>Bot is running... 🚀</h1><p>Client is either ready or initializing.</p>');
+        res.send(`
+            <html>
+                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#f0f2f5;">
+                    <div style="background:white; padding:40px; border-radius:20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align:center;">
+                        <h1 style="color:#25d366;">Air Fryer Bot</h1>
+                        <div style="font-size:1.5em; margin:20px;">${botStatus}</div>
+                        <p style="color:#666;">La pagina si aggiornerà automaticamente.</p>
+                    </div>
+                    <script>setTimeout(() => location.reload(), 5000);</script>
+                </body>
+            </html>
+        `);
     }
 });
 
@@ -68,17 +77,21 @@ const client = new Client({
 
 client.on('qr', (qr) => {
     lastQr = qr;
-    console.log('--- QR CODE UPDATED (View it on the web interface) ---');
-    qrcode.generate(qr, { small: true });
+    botStatus = 'Waiting for Scan... 📷';
+    console.log('--- QR CODE UPDATED ---');
 });
 
 client.on('ready', () => {
     lastQr = null;
+    botStatus = 'Bot is Ready & Working! ✅';
     console.log('✅ WhatsApp Client is ready!');
     startAutomation();
 });
 
-client.on('authenticated', () => console.log('✅ Authenticated successfully'));
+client.on('authenticated', () => {
+    botStatus = 'Authenticated! Starting... 🚀';
+    console.log('✅ Authenticated successfully');
+});
 client.on('auth_failure', msg => console.error('❌ Auth failure:', msg));
 
 // --- LOGICA DI AUTOMAZIONE ---

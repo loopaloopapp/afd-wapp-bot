@@ -20,9 +20,32 @@ const saveSentRecipe = (id) => {
     fs.writeFileSync(SENT_DB, JSON.stringify(db.slice(-100))); // Manteniamo solo gli ultimi 100 per leggerezza
 };
 
-// --- HEALTH CHECK PER RAILWAY ---
-app.get('/', (req, res) => res.send('Bot is running... 🚀'));
-app.listen(PORT, '0.0.0.0', () => console.log(`Health check server listening on port ${PORT}`));
+let lastQr = null;
+
+// --- WEB INTERFACE PER RAILWAY ---
+app.get('/', (req, res) => {
+    if (lastQr) {
+        res.send(`
+            <html>
+                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#f0f2f5;">
+                    <div style="background:white; padding:40px; border-radius:20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align:center;">
+                        <h1 style="color:#25d366;">WhatsApp Bot Setup</h1>
+                        <p>Scansiona il QR Code qui sotto con WhatsApp</p>
+                        <div id="qrcode" style="display:inline-block; margin:20px;"></div>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+                        <script>new QRCode(document.getElementById("qrcode"), { text: "${lastQr}", width: 256, height: 256 });</script>
+                        <p style="color:#666; font-size:0.9em;">Dispositivi collegati > Collega un dispositivo</p>
+                    </div>
+                    <script>setTimeout(() => location.reload(), 30000);</script>
+                </body>
+            </html>
+        `);
+    } else {
+        res.send('<h1>Bot is running... 🚀</h1><p>Client is either ready or initializing.</p>');
+    }
+});
+
+app.listen(PORT, '0.0.0.0', () => console.log(`Server listening on port ${PORT}`));
 
 // --- CONFIGURAZIONE WHATSAPP ---
 const client = new Client({
@@ -44,11 +67,13 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => {
-    console.log('--- SCAN THE QR CODE BELOW ---');
+    lastQr = qr;
+    console.log('--- QR CODE UPDATED (View it on the web interface) ---');
     qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
+    lastQr = null;
     console.log('✅ WhatsApp Client is ready!');
     startAutomation();
 });

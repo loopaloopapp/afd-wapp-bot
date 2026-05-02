@@ -72,9 +72,11 @@ const client = new Client({
             '--no-first-run',
             '--no-zygote',
             '--single-process',
-            '--disable-gpu'
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--font-render-hinting=none'
         ],
-        executablePath: process.env.CHROME_PATH || null
+        executablePath: process.env.CHROME_PATH || '/usr/bin/chromium'
     }
 });
 
@@ -190,5 +192,8 @@ async function checkAndPublish() {
     }
 }
 
-console.log('🚀 Initializing WhatsApp Client...');
-client.initialize();
+console.log('🚀 Initializing WhatsApp Client (Puppeteer)...');
+client.initialize().catch(err => {
+    console.error('❌ CRITICAL: WhatsApp Client failed to initialize:', err);
+    botStatus = 'Initialization Failed ❌';
+});

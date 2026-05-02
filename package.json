@@ -2,9 +2,9 @@
   "name": "afd-whatsapp-bot",
   "version": "1.0.0",
   "description": "WhatsApp Channel Bot for Air Fryer Daily",
-  "main": "index.js",
+  "main": "bot.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node bot.js"
   },
   "dependencies": {
     "axios": "^1.6.0",

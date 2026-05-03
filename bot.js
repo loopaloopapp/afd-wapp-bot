@@ -9,8 +9,12 @@ const path = require('path');
 const QRCode = require('qrcode');
 const pino = require('pino');
 
+// LOG IMMEDIATO PER DIAGNOSTICA
+console.log('--- STARTING UP ---');
+console.log('PORT ENV:', process.env.PORT);
+
 const app = express();
-const PORT = 8080; // FISSA SULLA 8080 PER RAILWAY
+const PORT = process.env.PORT || 3000;
 const SENT_DB = path.join(__dirname, 'sent_recipes.json');
 
 if (!fs.existsSync(SENT_DB)) fs.writeFileSync(SENT_DB, JSON.stringify([]));
@@ -19,7 +23,9 @@ let lastQrData = null;
 let botStatus = 'Initializing... ⚙️';
 let sock = null;
 
-// --- WEB INTERFACE (AVVIO IMMEDIATO) ---
+// --- ROUTES ---
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
 app.get('/', async (req, res) => {
     if (lastQrData) {
         try {
@@ -32,8 +38,6 @@ app.get('/', async (req, res) => {
     res.send(`<html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f0f2f5;"><div style="background:white;padding:40px;border-radius:20px;text-align:center;"><h1>Air Fryer Bot</h1><p style="font-size:1.5em;">${botStatus}</p></div><script>setTimeout(()=>location.reload(),5000);</script></body></html>`);
 });
 
-app.get('/health', (req, res) => res.status(200).send('OK'));
-
 app.get('/test-send', async (req, res) => {
     const isConnected = sock && sock.user && sock.user.id;
     if (!isConnected) return res.send('Bot non collegato!');
@@ -45,16 +49,14 @@ app.get('/test-send', async (req, res) => {
     }
 });
 
-// IL SERVER PARTE SUBITO
+// START SERVER
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server WEB attivo sulla porta ${PORT}`);
-    // WhatsApp parte solo dopo 5 secondi di "calma"
-    setTimeout(connectToWhatsApp, 5000);
+    console.log(`🚀 Server listening on port ${PORT}`);
+    setTimeout(connectToWhatsApp, 10000); // 10 secondi di respiro prima di WA
 });
 
-// --- BAILEYS WHATSAPP ---
 async function connectToWhatsApp() {
-    console.log('📱 Avvio connessione WhatsApp...');
+    console.log('📱 Connecting to WhatsApp...');
     try {
         const { state, saveCreds } = await useMultiFileAuthState('.wwebjs_auth');
         let version = [2, 3000, 1015901307]; 
@@ -73,7 +75,6 @@ async function connectToWhatsApp() {
         });
 
         sock.ev.on('creds.update', saveCreds);
-
         sock.ev.on('connection.update', (update) => {
             const { connection, lastDisconnect, qr } = update;
             if (qr) {
@@ -83,24 +84,23 @@ async function connectToWhatsApp() {
             if (connection === 'close') {
                 const statusCode = (lastDisconnect.error instanceof Boom)?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-                console.log(`❌ Connessione chiusa. Reconnect: ${shouldReconnect}`);
+                console.log(`❌ Closed. Reconnect: ${shouldReconnect}`);
                 lastQrData = null;
                 botStatus = 'Reconnecting... 🔄';
                 if (shouldReconnect) setTimeout(connectToWhatsApp, 5000);
             } else if (connection === 'open') {
-                console.log('✅ WhatsApp Connesso!');
+                console.log('✅ Connected!');
                 lastQrData = null;
                 botStatus = 'Bot is Active! ✅';
                 startAutomation();
             }
         });
     } catch (err) {
-        console.error('❌ Errore critico:', err);
-        setTimeout(connectToWhatsApp, 10000);
+        console.error('❌ Error:', err);
+        setTimeout(connectToWhatsApp, 15000);
     }
 }
 
-// --- AUTOMATION ---
 async function startAutomation() {
     setInterval(async () => {
         try { await checkAndPublish(); } catch (e) { console.error('Loop error:', e.message); }

@@ -34,6 +34,18 @@ app.get('/', async (req, res) => {
 // Health check per Railway
 app.get('/health', (req, res) => res.send('OK'));
 
+// Rotta di TEST manuale
+app.get('/test-send', async (req, res) => {
+    if (!sock) return res.send('Bot non pronto');
+    try {
+        console.log('🧪 Manual Test Triggered...');
+        await checkAndPublish(true); // true forza l'invio anche se duplicata
+        res.send('Test inviato! Controlla il canale WhatsApp.');
+    } catch (e) {
+        res.send('Errore test: ' + e.message);
+    }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server LIVE on port ${PORT}`);
     setTimeout(connectToWhatsApp, 5000); // Avvio ritardato per stabilità
@@ -92,11 +104,11 @@ async function startAutomation() {
     await checkAndPublish();
 }
 
-async function checkAndPublish() {
+async function checkAndPublish(force = false) {
     const sourceUrl = process.env.WEB_SOURCE_URL;
     const channelId = process.env.WA_CHANNEL_ID;
     
-    console.log('🔎 Checking recipes...');
+    console.log(`🔎 Checking recipes (force: ${force})...`);
     const { data } = await axios.get(sourceUrl);
     const $ = cheerio.load(data);
     
@@ -107,7 +119,7 @@ async function checkAndPublish() {
     });
 
     const sentDb = JSON.parse(fs.readFileSync(SENT_DB));
-    const newRecipes = recipeLinks.filter(link => !sentDb.includes(link)).slice(0, 1); 
+    const newRecipes = force ? [recipeLinks[0]] : recipeLinks.filter(link => !sentDb.includes(link)).slice(0, 1); 
 
     for (const link of newRecipes) {
         console.log(`✨ Processing: ${link}`);

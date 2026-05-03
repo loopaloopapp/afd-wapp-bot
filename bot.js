@@ -32,18 +32,26 @@ app.get('/', async (req, res) => {
 app.get('/test-send', async (req, res) => {
     if (!sock || !sock.user) return res.send('Bot non collegato!');
     try {
-        console.log('🧪 TEST MANUALE AVVIATO...');
+        console.log('🧪 DIAGNOSTICA AVVIATA...');
         
-        // --- DIAGNOSTICA CANALI ---
-        console.log('🔎 Cerco ID Canali/Newsletter...');
+        // --- SCANNER CHAT ---
+        console.log('🔎 Elenco chat visibili...');
         try {
-            // Alcune versioni di Baileys permettono di recuperare le newsletter così
-            const newsletters = await sock.getNewsletterMetadata?.() || [];
-            console.log('📋 Newsletters trovate:', JSON.stringify(newsletters, null, 2));
-        } catch (e) { console.log('⚠️ Non riesco a listare le newsletter automaticamente.'); }
+            const chats = await sock.groupFetchAllParticipating?.() || {};
+            console.log('📋 Gruppi trovati:', Object.keys(chats));
+            
+            // Tentativo alternativo per Newsletter
+            console.log('🔎 Tentativo recupero newsletter...');
+            const res = await sock.query({
+                tag: 'iq',
+                attrs: { to: '@newsletter', type: 'get', xmlns: 'w:mex' },
+                content: [{ tag: 'query', attrs: { query_id: '6620195908089573' }, content: [] }]
+            });
+            console.log('📋 Risposta Newsletter Mex:', JSON.stringify(res, null, 2));
+        } catch (e) { console.log('⚠️ Errore durante lo scan:', e.message); }
 
         await checkAndPublish(true); 
-        res.send('Test eseguito. Controlla i log di Railway per gli ID trovati!');
+        res.send('Test eseguito! Guarda i log di Railway.');
     } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -64,7 +72,7 @@ async function connectToWhatsApp() {
         version,
         auth: state,
         logger: pino({ level: 'error' }),
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        browser: ['Mac OS', 'Chrome', '121.0.6167.184'], // Browser più comune
         printQRInTerminal: false
     });
 
@@ -121,16 +129,16 @@ async function checkAndPublish(force = false) {
             const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
             
             console.log(`📤 Invio a me stesso (${myJid})...`);
-            await sock.sendMessage(myJid, { text: '--- TEST BOT AIR FRYER ---\n' + message });
+            try {
+                await sock.sendMessage(myJid, { text: 'BOT AIR FRYER: TEST\n' + message });
+                console.log('✅ Inviato a se stesso');
+            } catch (e) { console.log('❌ Errore se stesso:', e.message); }
             
             console.log(`📤 Invio al canale (${channelId})...`);
             try {
-                // Tentativo di invio standard
                 await sock.sendMessage(channelId, { text: message });
-                console.log('✅ Inviato!');
-            } catch (e) {
-                console.log('❌ Errore invio canale:', e.message);
-            }
+                console.log('✅ Inviato al canale');
+            } catch (e) { console.log('❌ Errore canale:', e.message); }
             
             if (!force) {
                 sentDb.push(link);

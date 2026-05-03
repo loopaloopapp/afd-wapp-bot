@@ -10,7 +10,7 @@ const QRCode = require('qrcode');
 const pino = require('pino');
 
 const app = express();
-const PORT = 8080; // FISSA SULLA 8080 PER RAILWAY
+const PORT = process.env.PORT || 8080;
 const SENT_DB = path.join(__dirname, 'sent_recipes.json');
 
 if (!fs.existsSync(SENT_DB)) fs.writeFileSync(SENT_DB, JSON.stringify([]));

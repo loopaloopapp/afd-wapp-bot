@@ -53,7 +53,11 @@ app.get('/test-send', async (req, res) => {
         res.send('Test inviato con successo! Controlla WhatsApp.');
     } catch (e) {
         console.error('❌ Test Route Error:', e);
-        res.status(500).send('Errore test: ' + e.message);
+        res.status(500).send(`
+            <h1>Errore durante il test</h1>
+            <pre style="background:#fff2f2; padding:20px; border:1px solid red;">${e.stack}</pre>
+            <p>Per favore, copia e incolla qui sopra questo errore.</p>
+        `);
     }
 });
 

@@ -64,19 +64,28 @@ app.listen(PORT, '0.0.0.0', () => {
 // --- BAILEYS WHATSAPP ---
 async function connectToWhatsApp() {
     console.log('📱 Connecting to WhatsApp...');
-    const { state, saveCreds } = await useMultiFileAuthState('.wwebjs_auth');
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`ℹ️ Using WA version: ${version.join('.')}, isLatest: ${isLatest}`);
+    try {
+        const { state, saveCreds } = await useMultiFileAuthState('.wwebjs_auth');
+        
+        // Fallback sicuro se la versione dinamica fallisce
+        let version = [2, 3000, 1015901307]; 
+        try {
+            const latest = await fetchLatestBaileysVersion();
+            if (latest && latest.version) version = latest.version;
+        } catch (e) {
+            console.log('⚠️ Usando versione WhatsApp di fallback');
+        }
 
-    sock = makeWASocket({
-        version,
-        auth: state,
-        logger: pino({ level: 'error' }),
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 10000
-    });
+        console.log(`ℹ️ WhatsApp version: ${version.join('.')}`);
+
+        sock = makeWASocket({
+            version,
+            auth: state,
+            logger: pino({ level: 'error' }),
+            browser: ['Ubuntu', 'Chrome', '20.0.04'],
+            connectTimeoutMs: 60000,
+            printQRInTerminal: false
+        });
 
     sock.ev.on('creds.update', saveCreds);
 
@@ -142,13 +151,21 @@ async function checkAndPublish(force = false) {
         let message = matches ? matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : null;
 
         if (message && sock) {
-            const delay = Math.floor(Math.random() * (60000 - 30000) + 30000);
-            console.log(`⏳ Delay ${Math.round(delay/1000)}s...`);
-            await new Promise(res => setTimeout(res, delay));
-            await sock.sendMessage(channelId, { text: message });
-            sentDb.push(link);
-            fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
-            console.log(`🚀 Sent to channel: ${link}`);
+            try {
+                const delay = Math.floor(Math.random() * (60000 - 30000) + 30000);
+                console.log(`⏳ Delay ${Math.round(delay/1000)}s...`);
+                await new Promise(res => setTimeout(res, delay));
+                
+                if (!sock) throw new Error('Socket non disponibile');
+                
+                await sock.sendMessage(channelId, { text: message });
+                sentDb.push(link);
+                fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
+                console.log(`🚀 Sent to channel: ${link}`);
+            } catch (sendError) {
+                console.error('❌ Errore durante l\'invio del messaggio:', sendError);
+                throw sendError;
+            }
         }
     }
 }

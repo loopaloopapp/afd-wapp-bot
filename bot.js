@@ -55,6 +55,11 @@ app.get('/test-send', async (req, res) => {
     
     try {
         console.log('🧪 Manual Test Triggered...');
+        
+        // Diagnostica: Vediamo quali canali/gruppi vede il bot
+        console.log('🔎 Cerco canali/newsletter disponibili...');
+        // Nota: Baileys carica i metadati dei gruppi/canali man mano
+        
         await checkAndPublish(true); 
         res.send('Test inviato con successo! Controlla WhatsApp.');
     } catch (e) {

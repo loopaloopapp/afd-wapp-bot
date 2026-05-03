@@ -69,7 +69,8 @@ async function connectToWhatsApp() {
             botStatus = 'Reconnecting... 🔄';
             setTimeout(connectToWhatsApp, 5000);
         } else if (connection === 'open') {
-            console.log('✅ WhatsApp Connesso!');
+            const jid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+            console.log(`✅ WhatsApp Connesso come: ${jid}`);
             lastQrData = null;
             botStatus = 'Bot is Active! ✅';
             startAutomation();
@@ -109,9 +110,11 @@ async function checkAndPublish(force = false) {
         let message = matches ? matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : null;
 
         if (message && sock && sock.user) {
-            // TEST: Invio a te stesso
-            console.log(`📤 Invio a me stesso (${sock.user.id})...`);
-            await sock.sendMessage(sock.user.id, { text: '--- TEST BOT ---\n' + message });
+            const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+            
+            // TEST: Invio a te stesso (normalizzato)
+            console.log(`📤 Invio a me stesso (${myJid})...`);
+            await sock.sendMessage(myJid, { text: '--- TEST BOT ---\n' + message });
             
             // Invio al canale
             console.log(`📤 Invio al canale ${channelId}...`);

@@ -166,29 +166,28 @@ async function checkAndPublish(force = false) {
 
             if (message && sock && sock.user && sock.user.id) {
                 try {
-                    const delay = force ? 2000 : Math.floor(Math.random() * (60000 - 30000) + 30000); // Test più veloce
-                    console.log(`⏳ Delay ${Math.round(delay/1000)}s...`);
+                    const delay = force ? 1000 : Math.floor(Math.random() * (60000 - 30000) + 30000);
                     await new Promise(res => setTimeout(res, delay));
                     
-                    // TEST: Invio a se stesso (per capire se il bot funziona)
-                    console.log('📤 Sending test to self...');
-                    await sock.sendMessage(sock.user.id, { text: '--- TEST BOT AIR FRYER ---\n' + message });
+                    // TEST 1: Messaggio semplicissimo a se stesso
+                    console.log(`📤 Sending simple test to self (${sock.user.id})...`);
+                    await sock.sendMessage(sock.user.id, { text: 'Bot Air Fryer è VIVO! 🚀' });
                     
-                    // Invio al canale
+                    // TEST 2: Invio al canale
                     console.log(`📤 Sending to channel ${channelId}...`);
                     const result = await sock.sendMessage(channelId, { text: message });
-                    console.log('✅ Result:', result ? 'Sent' : 'Failed');
+                    console.log('✅ Message Result ID:', result?.key?.id);
 
                     if (!force) {
                         sentDb.push(link);
                         fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
                     }
-                    console.log(`🚀 Processed: ${link}`);
                 } catch (sendError) {
                     console.error('❌ Errore durante l\'invio del messaggio:', sendError);
                     throw sendError;
                 }
-            } else if (message) {
+            }
+ else if (message) {
                 console.log('⚠️ Messaggio pronto ma Bot non collegato (sock.user mancante). Salto...');
             }
         }

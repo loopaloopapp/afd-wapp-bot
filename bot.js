@@ -166,14 +166,24 @@ async function checkAndPublish(force = false) {
 
             if (message && sock && sock.user && sock.user.id) {
                 try {
-                    const delay = Math.floor(Math.random() * (60000 - 30000) + 30000);
+                    const delay = force ? 2000 : Math.floor(Math.random() * (60000 - 30000) + 30000); // Test più veloce
                     console.log(`⏳ Delay ${Math.round(delay/1000)}s...`);
                     await new Promise(res => setTimeout(res, delay));
                     
-                    await sock.sendMessage(channelId, { text: message });
-                    sentDb.push(link);
-                    fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
-                    console.log(`🚀 Sent to channel: ${link}`);
+                    // TEST: Invio a se stesso (per capire se il bot funziona)
+                    console.log('📤 Sending test to self...');
+                    await sock.sendMessage(sock.user.id, { text: '--- TEST BOT AIR FRYER ---\n' + message });
+                    
+                    // Invio al canale
+                    console.log(`📤 Sending to channel ${channelId}...`);
+                    const result = await sock.sendMessage(channelId, { text: message });
+                    console.log('✅ Result:', result ? 'Sent' : 'Failed');
+
+                    if (!force) {
+                        sentDb.push(link);
+                        fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
+                    }
+                    console.log(`🚀 Processed: ${link}`);
                 } catch (sendError) {
                     console.error('❌ Errore durante l\'invio del messaggio:', sendError);
                     throw sendError;

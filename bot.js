@@ -77,6 +77,16 @@ async function connectToWhatsApp() {
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // --- SCOPERTA ID CANALE ---
+    sock.ev.on('messages.upsert', async m => {
+        const msg = m.messages[0];
+        if (!msg.key.fromMe && m.type === 'notify') {
+            console.log(`📩 MESSAGGIO RICEVUTO DA: ${msg.key.remoteJid}`);
+            console.log(`📝 CONTENUTO: ${msg.message?.conversation || msg.message?.extendedTextMessage?.text}`);
+        }
+    });
+
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         if (qr) { lastQrData = qr; botStatus = 'Waiting for Scan... 📷'; }

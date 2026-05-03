@@ -116,6 +116,13 @@ async function connectToWhatsApp() {
                 const statusCode = (lastDisconnect.error instanceof Boom)?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 console.log(`❌ Connection closed (Status: ${statusCode}). Reconnecting: ${shouldReconnect}`);
+                
+                // Se l'errore è 401 (Unauthorized) o simile, resettiamo la sessione
+                if (statusCode === 401 || statusCode === 403) {
+                    console.log('🧹 Sessione corrotta, pulizia in corso...');
+                    fs.rmSync('.wwebjs_auth', { recursive: true, force: true });
+                }
+
                 lastQrData = null;
                 botStatus = 'Reconnecting... 🔄';
                 if (shouldReconnect) setTimeout(connectToWhatsApp, 5000);

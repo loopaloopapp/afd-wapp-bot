@@ -12,6 +12,13 @@ const pino = require('pino');
 const app = express();
 const PORT = process.env.PORT || 8080;
 const SENT_DB = path.join(__dirname, 'sent_recipes.json');
+
+// LOG DI AVVIO PER VERIFICA VARIABILI
+console.log('--- ENV CHECK ---');
+console.log('WEB_SOURCE_URL:', process.env.WEB_SOURCE_URL);
+console.log('WA_CHANNEL_ID:', process.env.WA_CHANNEL_ID);
+console.log('CHECK_INTERVAL:', process.env.CHECK_INTERVAL_MINUTES);
+console.log('-----------------');
 if (!fs.existsSync(SENT_DB)) fs.writeFileSync(SENT_DB, JSON.stringify([]));
 
 let lastQrData = null;
@@ -36,13 +43,16 @@ app.get('/health', (req, res) => res.send('OK'));
 
 // Rotta di TEST manuale
 app.get('/test-send', async (req, res) => {
-    if (!sock) return res.send('Bot non pronto');
+    if (!sock) return res.status(500).send('Bot non pronto: socket non inizializzato');
+    if (!process.env.WA_CHANNEL_ID) return res.status(500).send('Errore: WA_CHANNEL_ID mancante nelle variabili di Railway');
+    
     try {
         console.log('🧪 Manual Test Triggered...');
-        await checkAndPublish(true); // true forza l'invio anche se duplicata
-        res.send('Test inviato! Controlla il canale WhatsApp.');
+        await checkAndPublish(true); 
+        res.send('Test inviato con successo! Controlla WhatsApp.');
     } catch (e) {
-        res.send('Errore test: ' + e.message);
+        console.error('❌ Test Route Error:', e);
+        res.status(500).send('Errore test: ' + e.message);
     }
 });
 

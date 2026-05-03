@@ -60,6 +60,15 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Web Server is LIVE on port ${PORT}`);
     console.log(`📡 Health Check: http://0.0.0.0:${PORT}/`);
+    
+    // Ritarda l'avvio di Puppeteer di 15 secondi per lasciare CPU al Web Server
+    setTimeout(() => {
+        console.log('🚀 Initializing WhatsApp Client (Puppeteer)...');
+        client.initialize().catch(err => {
+            console.error('❌ CRITICAL: WhatsApp Client failed to initialize:', err);
+            botStatus = 'Initialization Failed ❌';
+        });
+    }, 15000);
 });
 
 // --- CONFIGURAZIONE WHATSAPP ---
@@ -198,8 +207,4 @@ async function checkAndPublish() {
     }
 }
 
-console.log('🚀 Initializing WhatsApp Client (Puppeteer)...');
-client.initialize().catch(err => {
-    console.error('❌ CRITICAL: WhatsApp Client failed to initialize:', err);
-    botStatus = 'Initialization Failed ❌';
-});
+// Spostato dentro l'app.listen con timeout

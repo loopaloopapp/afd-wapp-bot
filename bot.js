@@ -11,7 +11,10 @@ const pino = require('pino');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SENT_DB = path.join(__dirname, 'sent_recipes.json');
+const AUTH_DIR = path.join(__dirname, '.wwebjs_auth');
+const SENT_DB = path.join(AUTH_DIR, 'sent_recipes.json'); // Salviamo nel volume per persistenza
+
+if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 if (!fs.existsSync(SENT_DB)) fs.writeFileSync(SENT_DB, JSON.stringify([]));
 
 let lastQrData = null;
@@ -34,7 +37,7 @@ app.get('/test-send', async (req, res) => {
     if (!sock || !sock.user) return res.send('Bot non collegato!');
     try {
         await checkAndPublish(true); 
-        res.send('Test inviato al canale!');
+        res.send('Test inviato al canale con foto!');
     } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -45,7 +48,7 @@ app.listen(PORT, '0.0.0.0', () => {
 
 // --- WHATSAPP LOGIC ---
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('.wwebjs_auth');
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     let version = [2, 3000, 1015901307];
     try {
         const latest = await fetchLatestBaileysVersion();
@@ -71,7 +74,7 @@ async function connectToWhatsApp() {
         } else if (connection === 'open') {
             lastQrData = null;
             botStatus = 'Bot is Active! ✅';
-            console.log('✅ WhatsApp Connesso e Pronto');
+            console.log('✅ WhatsApp Connesso');
             startAutomation();
         }
     });
@@ -88,12 +91,7 @@ async function startAutomation() {
 async function checkAndPublish(force = false) {
     const sourceUrl = process.env.WEB_SOURCE_URL;
     let channelId = process.env.WA_CHANNEL_ID;
-    
-    // FORZATURA: Se Railway non aggiorna la variabile, usiamo quella corretta scoperta dai log
-    if (!channelId || channelId.startsWith('0029')) {
-        channelId = '120363425032237179@newsletter';
-        console.log('⚠️ Uso ID Canale di emergenza (Hardcoded)');
-    }
+    if (!channelId || channelId.startsWith('0029')) channelId = '120363425032237179@newsletter';
 
     const { data } = await axios.get(sourceUrl);
     const $ = cheerio.load(data);
@@ -107,26 +105,41 @@ async function checkAndPublish(force = false) {
     const newRecipes = force ? [recipeLinks[0]] : recipeLinks.filter(link => !sentDb.includes(link)).slice(0, 1); 
 
     for (const link of newRecipes) {
-        const recipePage = await axios.get(link);
-        const $r = cheerio.load(recipePage.data);
-        const shareOnClick = $r('#mainShareBtn').attr('onclick');
-        if (!shareOnClick) continue;
-        const matches = shareOnClick.match(/unifiedShare\s*\(\s*(?:"|').*?(?:"|')\s*,\s*"((?:\\"|[^"])*)"/);
-        let message = matches ? matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : null;
+        try {
+            const recipePage = await axios.get(link);
+            const $r = cheerio.load(recipePage.data);
+            
+            // Estrazione Immagine
+            const imageUrl = $r('meta[property="og:image"]').attr('content') || $r('.recipe-header img').attr('src');
+            const absoluteImageUrl = imageUrl ? new URL(imageUrl, link).href : null;
 
-        if (message && sock && sock.user) {
-            console.log(`🚀 Pubblicazione ricetta su canale: ${channelId}`);
-            try {
-                const result = await sock.sendMessage(channelId, { text: message });
-                console.log('✅ Inviata con successo. ID:', result?.key?.id);
+            // Estrazione Messaggio Share
+            const shareOnClick = $r('#mainShareBtn').attr('onclick');
+            if (!shareOnClick) continue;
+            const matches = shareOnClick.match(/unifiedShare\s*\(\s*(?:"|').*?(?:"|')\s*,\s*"((?:\\"|[^"])*)"/);
+            let message = matches ? matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : null;
+
+            if (message && sock && sock.user) {
+                console.log(`🚀 Pubblicazione ricetta con foto: ${link}`);
                 
+                if (absoluteImageUrl) {
+                    // Invio con FOTO
+                    await sock.sendMessage(channelId, { 
+                        image: { url: absoluteImageUrl },
+                        caption: message
+                    });
+                } else {
+                    // Solo testo se manca foto
+                    await sock.sendMessage(channelId, { text: message });
+                }
+
                 if (!force) {
                     sentDb.push(link);
                     fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
                 }
-            } catch (e) { 
-                console.error('❌ ERRORE INVIO CANALE:', e.message);
             }
+        } catch (err) {
+            console.error(`❌ Errore ricetta ${link}:`, err.message);
         }
     }
 }

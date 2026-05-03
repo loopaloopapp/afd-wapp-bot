@@ -1,75 +1,69 @@
 require('dotenv').config();
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const QRCode = require('qrcode');
+const pino = require('pino');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 const SENT_DB = path.join(__dirname, 'sent_recipes.json');
-
 if (!fs.existsSync(SENT_DB)) fs.writeFileSync(SENT_DB, JSON.stringify([]));
 
-let lastQr = null;
+let lastQrData = null;
 let botStatus = 'Initializing... ⚙️';
+let sock = null;
 
-// --- WEB SERVER (Priorità Massima) ---
-app.get('/', (req, res) => {
-    if (lastQr) {
-        res.send(`<html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f0f2f5;"><div style="background:white;padding:40px;border-radius:20px;box-shadow:0 10px 25px rgba(0,0,0,0.1);text-align:center;"><h1 style="color:#25d366;">WhatsApp Scan</h1><div id="qrcode"></div><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script><script>new QRCode(document.getElementById("qrcode"), {text:"${lastQr}",width:256,height:256});</script><p>Scansiona per attivare il bot</p></div><script>setTimeout(()=>location.reload(),15000);</script></body></html>`);
+// --- WEB INTERFACE ---
+app.get('/', async (req, res) => {
+    if (lastQrData) {
+        const qrImage = await QRCode.toDataURL(lastQrData);
+        res.send(`<html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f0f2f5;"><div style="background:white;padding:40px;border-radius:20px;text-align:center;"><h1>Scan QR Code</h1><img src="${qrImage}" /><p>Scansiona con WhatsApp</p></div><script>setTimeout(()=>location.reload(),20000);</script></body></html>`);
     } else {
         res.send(`<html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f0f2f5;"><div style="background:white;padding:40px;border-radius:20px;text-align:center;"><h1>Air Fryer Bot</h1><p>${botStatus}</p></div><script>setTimeout(()=>location.reload(),5000);</script></body></html>`);
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server LIVE on port ${PORT}`));
+
+// --- BAILEYS WHATSAPP ---
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('.wwebjs_auth');
     
-    // Avvio WhatsApp dopo 10 secondi
-    setTimeout(initWhatsApp, 10000);
-});
+    sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true,
+        logger: pino({ level: 'silent' }),
+        browser: ['Air Fryer Bot', 'MacOS', '1.0.0']
+    });
 
-// --- WHATSAPP LOGIC ---
-const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
-    puppeteer: {
-        headless: true,
-        executablePath: '/usr/bin/google-chrome', // Percorso nell'immagine ufficiale puppeteer
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-zygote',
-            '--single-process'
-        ]
-    }
-});
+    sock.ev.on('creds.update', saveCreds);
 
-function initWhatsApp() {
-    console.log('📱 Initializing WhatsApp...');
-    client.initialize().catch(e => console.error('Error init:', e));
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        
+        if (qr) {
+            lastQrData = qr;
+            botStatus = 'Waiting for Scan... 📷';
+        }
+
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
+            lastQrData = null;
+            if (shouldReconnect) connectToWhatsApp();
+        } else if (connection === 'open') {
+            console.log('✅ Connected to WhatsApp!');
+            lastQrData = null;
+            botStatus = 'Working! ✅';
+            startAutomation();
+        }
+    });
 }
-
-client.on('qr', (qr) => {
-    lastQr = qr;
-    botStatus = 'Waiting for Scan... 📷';
-    console.log('--- NEW QR CODE ---');
-});
-
-client.on('ready', () => {
-    lastQr = null;
-    botStatus = 'Working! ✅';
-    console.log('✅ Ready!');
-    startAutomation();
-});
-
-client.on('authenticated', () => {
-    botStatus = 'Authenticated! 🚀';
-    console.log('✅ Auth success');
-});
 
 // --- AUTOMATION ---
 async function startAutomation() {
@@ -105,12 +99,20 @@ async function checkAndPublish() {
         const matches = shareOnClick.match(/unifiedShare\s*\(\s*(?:"|').*?(?:"|')\s*,\s*"((?:\\"|[^"])*)"/);
         let message = matches ? matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : null;
 
-        if (message) {
-            await new Promise(res => setTimeout(res, 10000)); // Delay minimo
-            await client.sendMessage(channelId, message);
+        if (message && sock) {
+            // Anti-ban delay
+            const delay = Math.floor(Math.random() * (120000 - 45000) + 45000);
+            console.log(`⏳ Waiting ${Math.round(delay/1000)}s...`);
+            await new Promise(res => setTimeout(res, delay));
+
+            // Invio messaggio
+            await sock.sendMessage(channelId, { text: message });
+            
             sentDb.push(link);
             fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
             console.log(`🚀 Sent: ${link}`);
         }
     }
 }
+
+connectToWhatsApp();

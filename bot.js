@@ -57,7 +57,10 @@ app.get('/', (req, res) => {
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server listening on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Web Server is LIVE on port ${PORT}`);
+    console.log(`📡 Health Check: http://0.0.0.0:${PORT}/`);
+});
 
 // --- CONFIGURAZIONE WHATSAPP ---
 const client = new Client({
@@ -74,7 +77,10 @@ const client = new Client({
             '--single-process',
             '--disable-gpu',
             '--disable-software-rasterizer',
-            '--font-render-hinting=none'
+            '--font-render-hinting=none',
+            '--disable-extensions',
+            '--memory-pressure-thresholds=1',
+            '--js-flags="--max-old-space-size=256"'
         ],
         executablePath: process.env.CHROME_PATH || '/usr/bin/chromium'
     }

@@ -116,10 +116,28 @@ async function checkAndPublish(force = false) {
             // Estrazione Messaggio Share
             const shareOnClick = $r('#mainShareBtn').attr('onclick');
             if (!shareOnClick) continue;
+            
+            // Estrazione e decodifica corretta della stringa JS
             const matches = shareOnClick.match(/unifiedShare\s*\(\s*(?:"|').*?(?:"|')\s*,\s*"((?:\\"|[^"])*)"/);
-            let message = matches ? matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : null;
+            let message = null;
+            if (matches) {
+                try {
+                    // Usiamo JSON.parse per decodificare correttamente unicode ed escape
+                    message = JSON.parse(`"${matches[1]}"`);
+                } catch (e) {
+                    // Fallback se JSON.parse fallisce
+                    message = matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\//g, '/');
+                }
+            }
 
             if (message && sock && sock.user) {
+                // Miglioriamo ulteriormente il formato: Titolo in Grassetto
+                // Assumiamo che la prima riga sia il titolo
+                const lines = message.split('\n');
+                if (lines.length > 0) {
+                    lines[0] = `*${lines[0].trim()}*`;
+                    message = lines.join('\n');
+                }
                 console.log(`🚀 Pubblicazione ricetta con foto: ${link}`);
                 
                 if (absoluteImageUrl) {

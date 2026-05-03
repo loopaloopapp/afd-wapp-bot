@@ -44,8 +44,14 @@ app.get('/health', (req, res) => res.send('OK'));
 
 // Rotta di TEST manuale
 app.get('/test-send', async (req, res) => {
-    if (!sock) return res.status(500).send('Bot non pronto: socket non inizializzato');
-    if (!process.env.WA_CHANNEL_ID) return res.status(500).send('Errore: WA_CHANNEL_ID mancante nelle variabili di Railway');
+    const isConnected = sock && sock.user && sock.user.id;
+    if (!isConnected) {
+        return res.status(500).send(`
+            <h1>Bot non collegato ❌</h1>
+            <p>Devi prima scansionare il QR code nella <a href="/">Home</a>.</p>
+            <p>Stato attuale: ${botStatus}</p>
+        `);
+    }
     
     try {
         console.log('🧪 Manual Test Triggered...');
@@ -56,7 +62,6 @@ app.get('/test-send', async (req, res) => {
         res.status(500).send(`
             <h1>Errore durante il test</h1>
             <pre style="background:#fff2f2; padding:20px; border:1px solid red;">${e.stack}</pre>
-            <p>Per favore, copia e incolla qui sopra questo errore.</p>
         `);
     }
 });
@@ -159,13 +164,11 @@ async function checkAndPublish(force = false) {
             const matches = shareOnClick.match(/unifiedShare\s*\(\s*(?:"|').*?(?:"|')\s*,\s*"((?:\\"|[^"])*)"/);
             let message = matches ? matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : null;
 
-            if (message && sock) {
+            if (message && sock && sock.user && sock.user.id) {
                 try {
                     const delay = Math.floor(Math.random() * (60000 - 30000) + 30000);
                     console.log(`⏳ Delay ${Math.round(delay/1000)}s...`);
                     await new Promise(res => setTimeout(res, delay));
-                    
-                    if (!sock) throw new Error('Socket non disponibile');
                     
                     await sock.sendMessage(channelId, { text: message });
                     sentDb.push(link);
@@ -175,6 +178,8 @@ async function checkAndPublish(force = false) {
                     console.error('❌ Errore durante l\'invio del messaggio:', sendError);
                     throw sendError;
                 }
+            } else if (message) {
+                console.log('⚠️ Messaggio pronto ma Bot non collegato (sock.user mancante). Salto...');
             }
         }
     } catch (e) {

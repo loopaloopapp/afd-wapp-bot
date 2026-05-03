@@ -18,6 +18,7 @@ let lastQrData = null;
 let botStatus = 'Initializing... ⚙️';
 let sock = null;
 
+// --- WEB INTERFACE ---
 app.get('/health', (req, res) => res.status(200).send('OK'));
 app.get('/', async (req, res) => {
     if (lastQrData) {
@@ -32,26 +33,8 @@ app.get('/', async (req, res) => {
 app.get('/test-send', async (req, res) => {
     if (!sock || !sock.user) return res.send('Bot non collegato!');
     try {
-        console.log('🧪 DIAGNOSTICA AVVIATA...');
-        
-        // --- SCANNER CHAT ---
-        console.log('🔎 Elenco chat visibili...');
-        try {
-            const chats = await sock.groupFetchAllParticipating?.() || {};
-            console.log('📋 Gruppi trovati:', Object.keys(chats));
-            
-            // Tentativo alternativo per Newsletter
-            console.log('🔎 Tentativo recupero newsletter...');
-            const res = await sock.query({
-                tag: 'iq',
-                attrs: { to: '@newsletter', type: 'get', xmlns: 'w:mex' },
-                content: [{ tag: 'query', attrs: { query_id: '6620195908089573' }, content: [] }]
-            });
-            console.log('📋 Risposta Newsletter Mex:', JSON.stringify(res, null, 2));
-        } catch (e) { console.log('⚠️ Errore durante lo scan:', e.message); }
-
         await checkAndPublish(true); 
-        res.send('Test eseguito! Guarda i log di Railway.');
+        res.send('Test inviato al canale!');
     } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -60,6 +43,7 @@ app.listen(PORT, '0.0.0.0', () => {
     setTimeout(connectToWhatsApp, 5000);
 });
 
+// --- WHATSAPP LOGIC ---
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('.wwebjs_auth');
     let version = [2, 3000, 1015901307];
@@ -72,21 +56,11 @@ async function connectToWhatsApp() {
         version,
         auth: state,
         logger: pino({ level: 'error' }),
-        browser: ['Mac OS', 'Chrome', '121.0.6167.184'], // Browser più comune
+        browser: ['Mac OS', 'Chrome', '121.0.6167.184'],
         printQRInTerminal: false
     });
 
     sock.ev.on('creds.update', saveCreds);
-
-    // --- SCOPERTA ID CANALE ---
-    sock.ev.on('messages.upsert', async m => {
-        const msg = m.messages[0];
-        if (!msg.key.fromMe && m.type === 'notify') {
-            console.log(`📩 MESSAGGIO RICEVUTO DA: ${msg.key.remoteJid}`);
-            console.log(`📝 CONTENUTO: ${msg.message?.conversation || msg.message?.extendedTextMessage?.text}`);
-        }
-    });
-
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         if (qr) { lastQrData = qr; botStatus = 'Waiting for Scan... 📷'; }
@@ -95,19 +69,19 @@ async function connectToWhatsApp() {
             botStatus = 'Reconnecting... 🔄';
             setTimeout(connectToWhatsApp, 5000);
         } else if (connection === 'open') {
-            const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-            console.log(`✅ WhatsApp Connesso come: ${myJid}`);
             lastQrData = null;
             botStatus = 'Bot is Active! ✅';
+            console.log('✅ WhatsApp Connesso e Pronto');
             startAutomation();
         }
     });
 }
 
 async function startAutomation() {
+    const interval = (process.env.CHECK_INTERVAL_MINUTES || 30) * 60 * 1000;
     setInterval(async () => {
         try { await checkAndPublish(); } catch (e) { console.error('Loop error:', e.message); }
-    }, (process.env.CHECK_INTERVAL_MINUTES || 30) * 60 * 1000);
+    }, interval);
     await checkAndPublish();
 }
 
@@ -115,7 +89,8 @@ async function checkAndPublish(force = false) {
     const sourceUrl = process.env.WEB_SOURCE_URL;
     const channelId = process.env.WA_CHANNEL_ID;
     
-    console.log('🔎 Controllo ricette...');
+    if (!channelId) { console.error('❌ WA_CHANNEL_ID non configurato!'); return; }
+
     const { data } = await axios.get(sourceUrl);
     const $ = cheerio.load(data);
     const recipeLinks = [];
@@ -136,24 +111,14 @@ async function checkAndPublish(force = false) {
         let message = matches ? matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : null;
 
         if (message && sock && sock.user) {
-            const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-            
-            console.log(`📤 Invio a me stesso (${myJid})...`);
-            try {
-                await sock.sendMessage(myJid, { text: 'BOT AIR FRYER: TEST\n' + message });
-                console.log('✅ Inviato a se stesso');
-            } catch (e) { console.log('❌ Errore se stesso:', e.message); }
-            
-            console.log(`📤 Invio al canale (${channelId})...`);
+            console.log(`🚀 Pubblicazione ricetta: ${link}`);
             try {
                 await sock.sendMessage(channelId, { text: message });
-                console.log('✅ Inviato al canale');
-            } catch (e) { console.log('❌ Errore canale:', e.message); }
-            
-            if (!force) {
-                sentDb.push(link);
-                fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
-            }
+                if (!force) {
+                    sentDb.push(link);
+                    fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
+                }
+            } catch (e) { console.error('❌ Errore pubblicazione canale:', e.message); }
         }
     }
 }

@@ -1,9 +1,12 @@
 FROM node:20-slim
 
-WORKDIR /app
+# Installiamo git (necessario per alcune dipendenze di Baileys)
+RUN apt-get update && apt-get install -y \
+    git \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
-# Non servono più librerie per Chromium! 
-# Baileys è puro JavaScript.
+WORKDIR /app
 
 COPY package*.json ./
 RUN npm install

@@ -87,9 +87,13 @@ async function startAutomation() {
 
 async function checkAndPublish(force = false) {
     const sourceUrl = process.env.WEB_SOURCE_URL;
-    const channelId = process.env.WA_CHANNEL_ID;
+    let channelId = process.env.WA_CHANNEL_ID;
     
-    if (!channelId) { console.error('❌ WA_CHANNEL_ID non configurato!'); return; }
+    // FORZATURA: Se Railway non aggiorna la variabile, usiamo quella corretta scoperta dai log
+    if (!channelId || channelId.startsWith('0029')) {
+        channelId = '120363425032237179@newsletter';
+        console.log('⚠️ Uso ID Canale di emergenza (Hardcoded)');
+    }
 
     const { data } = await axios.get(sourceUrl);
     const $ = cheerio.load(data);

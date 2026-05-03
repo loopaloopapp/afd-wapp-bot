@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const axios = require('axios');
 const cheerio = require('cheerio');
@@ -21,23 +21,39 @@ let sock = null;
 // --- WEB INTERFACE ---
 app.get('/', async (req, res) => {
     if (lastQrData) {
-        const qrImage = await QRCode.toDataURL(lastQrData);
-        res.send(`<html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f0f2f5;"><div style="background:white;padding:40px;border-radius:20px;text-align:center;"><h1>Scan QR Code</h1><img src="${qrImage}" /><p>Scansiona con WhatsApp</p></div><script>setTimeout(()=>location.reload(),20000);</script></body></html>`);
-    } else {
-        res.send(`<html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f0f2f5;"><div style="background:white;padding:40px;border-radius:20px;text-align:center;"><h1>Air Fryer Bot</h1><p>${botStatus}</p></div><script>setTimeout(()=>location.reload(),5000);</script></body></html>`);
+        try {
+            const qrImage = await QRCode.toDataURL(lastQrData);
+            return res.send(`<html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f0f2f5;"><div style="background:white;padding:40px;border-radius:20px;text-align:center;"><h1>Scan QR Code</h1><img src="${qrImage}" style="width:300px;" /><p>Apri WhatsApp > Dispositivi Collegati > Collega dispositivo</p></div><script>setTimeout(()=>location.reload(),20000);</script></body></html>`);
+        } catch (e) {
+            return res.send('Errore generazione QR. Ricarica...');
+        }
     }
+    res.send(`<html><body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#f0f2f5;"><div style="background:white;padding:40px;border-radius:20px;text-align:center;"><h1>Air Fryer Bot</h1><p style="font-size:1.5em;">${botStatus}</p><p>La pagina si aggiornerà automaticamente.</p></div><script>setTimeout(()=>location.reload(),5000);</script></body></html>`);
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server LIVE on port ${PORT}`));
+// Health check per Railway
+app.get('/health', (req, res) => res.send('OK'));
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server LIVE on port ${PORT}`);
+    setTimeout(connectToWhatsApp, 5000); // Avvio ritardato per stabilità
+});
 
 // --- BAILEYS WHATSAPP ---
 async function connectToWhatsApp() {
+    console.log('📱 Connecting to WhatsApp...');
     const { state, saveCreds } = await useMultiFileAuthState('.wwebjs_auth');
-    
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`ℹ️ Using WA version: ${version.join('.')}, isLatest: ${isLatest}`);
+
     sock = makeWASocket({
+        version,
         auth: state,
-        logger: pino({ level: 'info' }), // Aumentiamo il log per vedere meglio cosa succede
-        browser: ['Ubuntu', 'Chrome', '20.0.04'] // Stringa standard più sicura
+        logger: pino({ level: 'error' }),
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
+        keepAliveIntervalMs: 10000
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -48,17 +64,20 @@ async function connectToWhatsApp() {
         if (qr) {
             lastQrData = qr;
             botStatus = 'Waiting for Scan... 📷';
+            console.log('📷 New QR Code available!');
         }
 
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
+            const statusCode = (lastDisconnect.error instanceof Boom)?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            console.log(`❌ Connection closed (Status: ${statusCode}). Reconnecting: ${shouldReconnect}`);
             lastQrData = null;
-            if (shouldReconnect) connectToWhatsApp();
+            botStatus = 'Reconnecting... 🔄';
+            if (shouldReconnect) setTimeout(connectToWhatsApp, 5000);
         } else if (connection === 'open') {
             console.log('✅ Connected to WhatsApp!');
             lastQrData = null;
-            botStatus = 'Working! ✅';
+            botStatus = 'Bot is Active! ✅';
             startAutomation();
         }
     });
@@ -66,6 +85,7 @@ async function connectToWhatsApp() {
 
 // --- AUTOMATION ---
 async function startAutomation() {
+    console.log('🤖 Automation started...');
     setInterval(async () => {
         try { await checkAndPublish(); } catch (e) { console.error('Loop error:', e.message); }
     }, process.env.CHECK_INTERVAL_MINUTES * 60 * 1000);
@@ -90,6 +110,7 @@ async function checkAndPublish() {
     const newRecipes = recipeLinks.filter(link => !sentDb.includes(link)).slice(0, 1); 
 
     for (const link of newRecipes) {
+        console.log(`✨ Processing: ${link}`);
         const recipePage = await axios.get(link);
         const $r = cheerio.load(recipePage.data);
         const shareOnClick = $r('#mainShareBtn').attr('onclick');
@@ -99,19 +120,13 @@ async function checkAndPublish() {
         let message = matches ? matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : null;
 
         if (message && sock) {
-            // Anti-ban delay
-            const delay = Math.floor(Math.random() * (120000 - 45000) + 45000);
-            console.log(`⏳ Waiting ${Math.round(delay/1000)}s...`);
+            const delay = Math.floor(Math.random() * (60000 - 30000) + 30000);
+            console.log(`⏳ Delay ${Math.round(delay/1000)}s...`);
             await new Promise(res => setTimeout(res, delay));
-
-            // Invio messaggio
             await sock.sendMessage(channelId, { text: message });
-            
             sentDb.push(link);
             fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
-            console.log(`🚀 Sent: ${link}`);
+            console.log(`🚀 Sent to channel: ${link}`);
         }
     }
 }
-
-connectToWhatsApp();

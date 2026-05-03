@@ -36,9 +36,8 @@ async function connectToWhatsApp() {
     
     sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
-        logger: pino({ level: 'silent' }),
-        browser: ['Air Fryer Bot', 'MacOS', '1.0.0']
+        logger: pino({ level: 'info' }), // Aumentiamo il log per vedere meglio cosa succede
+        browser: ['Ubuntu', 'Chrome', '20.0.04'] // Stringa standard più sicura
     });
 
     sock.ev.on('creds.update', saveCreds);

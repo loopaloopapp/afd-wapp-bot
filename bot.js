@@ -115,21 +115,17 @@ async function checkAndPublish(force = false) {
         let message = matches ? matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n') : null;
 
         if (message && sock && sock.user) {
-            console.log(`🚀 Tentativo pubblicazione su: ${channelId}`);
+            console.log(`🚀 Pubblicazione ricetta su canale: ${channelId}`);
             try {
-                // TEST 1: Messaggio semplicissimo
-                await sock.sendMessage(channelId, { text: "🔔 Test invio dal Bot Air Fryer" });
-                
-                // TEST 2: La ricetta
                 const result = await sock.sendMessage(channelId, { text: message });
-                console.log('✅ Risposta server WA ricevuta. ID Messaggio:', result?.key?.id);
+                console.log('✅ Inviata con successo. ID:', result?.key?.id);
                 
                 if (!force) {
                     sentDb.push(link);
                     fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
                 }
             } catch (e) { 
-                console.error('❌ ERRORE CRITICO INVIO CANALE:', e);
+                console.error('❌ ERRORE INVIO CANALE:', e.message);
             }
         }
     }

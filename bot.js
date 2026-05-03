@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000; // Railway preferisce spesso la 3000 come default
 const SENT_DB = path.join(__dirname, 'sent_recipes.json');
 
 // --- DATABASE LOCALE ---
@@ -59,16 +59,12 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Web Server is LIVE on port ${PORT}`);
-    console.log(`📡 Health Check: http://0.0.0.0:${PORT}/`);
     
-    // Ritarda l'avvio di Puppeteer di 15 secondi per lasciare CPU al Web Server
+    // Ritarda Puppeteer di 20 secondi per essere sicuri che Railway veda il server attivo
     setTimeout(() => {
-        console.log('🚀 Initializing WhatsApp Client (Puppeteer)...');
-        client.initialize().catch(err => {
-            console.error('❌ CRITICAL: WhatsApp Client failed to initialize:', err);
-            botStatus = 'Initialization Failed ❌';
-        });
-    }, 15000);
+        console.log('🚀 Starting WhatsApp Client...');
+        client.initialize().catch(err => console.error('❌ Init Error:', err));
+    }, 20000);
 });
 
 // --- CONFIGURAZIONE WHATSAPP ---

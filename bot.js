@@ -19,7 +19,6 @@ let botStatus = 'Initializing... ⚙️';
 let sock = null;
 
 app.get('/health', (req, res) => res.status(200).send('OK'));
-
 app.get('/', async (req, res) => {
     if (lastQrData) {
         try {
@@ -33,9 +32,18 @@ app.get('/', async (req, res) => {
 app.get('/test-send', async (req, res) => {
     if (!sock || !sock.user) return res.send('Bot non collegato!');
     try {
-        console.log('🧪 Avvio Test Manuale...');
+        console.log('🧪 TEST MANUALE AVVIATO...');
+        
+        // --- DIAGNOSTICA CANALI ---
+        console.log('🔎 Cerco ID Canali/Newsletter...');
+        try {
+            // Alcune versioni di Baileys permettono di recuperare le newsletter così
+            const newsletters = await sock.getNewsletterMetadata?.() || [];
+            console.log('📋 Newsletters trovate:', JSON.stringify(newsletters, null, 2));
+        } catch (e) { console.log('⚠️ Non riesco a listare le newsletter automaticamente.'); }
+
         await checkAndPublish(true); 
-        res.send('Test inviato! Controlla sia la tua chat privata che il canale.');
+        res.send('Test eseguito. Controlla i log di Railway per gli ID trovati!');
     } catch (e) { res.status(500).send(e.message); }
 });
 
@@ -69,8 +77,8 @@ async function connectToWhatsApp() {
             botStatus = 'Reconnecting... 🔄';
             setTimeout(connectToWhatsApp, 5000);
         } else if (connection === 'open') {
-            const jid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-            console.log(`✅ WhatsApp Connesso come: ${jid}`);
+            const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+            console.log(`✅ WhatsApp Connesso come: ${myJid}`);
             lastQrData = null;
             botStatus = 'Bot is Active! ✅';
             startAutomation();
@@ -112,13 +120,17 @@ async function checkAndPublish(force = false) {
         if (message && sock && sock.user) {
             const myJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
             
-            // TEST: Invio a te stesso (normalizzato)
             console.log(`📤 Invio a me stesso (${myJid})...`);
-            await sock.sendMessage(myJid, { text: '--- TEST BOT ---\n' + message });
+            await sock.sendMessage(myJid, { text: '--- TEST BOT AIR FRYER ---\n' + message });
             
-            // Invio al canale
-            console.log(`📤 Invio al canale ${channelId}...`);
-            await sock.sendMessage(channelId, { text: message });
+            console.log(`📤 Invio al canale (${channelId})...`);
+            try {
+                // Tentativo di invio standard
+                await sock.sendMessage(channelId, { text: message });
+                console.log('✅ Inviato!');
+            } catch (e) {
+                console.log('❌ Errore invio canale:', e.message);
+            }
             
             if (!force) {
                 sentDb.push(link);

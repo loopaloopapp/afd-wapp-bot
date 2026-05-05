@@ -8,6 +8,20 @@ primary_region = "lhr"
   force_https = true
   auto_stop_machines = false
   auto_start_machines = true
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 25
+    soft_limit = 20
+
+[checks]
+  [checks.health]
+    grace_period = "30s"
+    interval = "15s"
+    method = "GET"
+    path = "/health"
+    port = 8080
+    timeout = "10s"
+    type = "http"
 
 [[vm]]
   memory = "512mb"

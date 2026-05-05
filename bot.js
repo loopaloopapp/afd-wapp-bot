@@ -91,73 +91,92 @@ async function startAutomation() {
 async function checkAndPublish(force = false) {
     const sourceUrl = process.env.WEB_SOURCE_URL;
     let channelId = process.env.WA_CHANNEL_ID;
-    if (!channelId || channelId.startsWith('0029')) channelId = '120363425032237179@newsletter';
+    
+    if (!channelId || channelId.trim() === "" || channelId.startsWith('http')) {
+        channelId = '120363425032237179@newsletter';
+    }
 
-    const { data } = await axios.get(sourceUrl);
-    const $ = cheerio.load(data);
-    const recipeLinks = [];
-    $('.recipe-card a.card-link').each((i, el) => {
-        const href = $(el).attr('href');
-        if (href) recipeLinks.push(new URL(href, sourceUrl).href);
-    });
+    console.log(`🔍 Controllo nuove ricette su: ${sourceUrl}`);
+    try {
+        const { data } = await axios.get(sourceUrl);
+        const $ = cheerio.load(data);
+        const recipeLinks = [];
+        
+        $('.recipe-card a.card-link').each((i, el) => {
+            const href = $(el).attr('href');
+            if (href) recipeLinks.push(new URL(href, sourceUrl).href);
+        });
 
-    const sentDb = JSON.parse(fs.readFileSync(SENT_DB));
-    const newRecipes = force ? [recipeLinks[0]] : recipeLinks.filter(link => !sentDb.includes(link)).slice(0, 1); 
+        console.log(`📚 Trovate ${recipeLinks.length} ricette totali sul sito.`);
 
-    for (const link of newRecipes) {
-        try {
-            const recipePage = await axios.get(link);
-            const $r = cheerio.load(recipePage.data);
-            
-            // Estrazione Immagine
-            const imageUrl = $r('meta[property="og:image"]').attr('content') || $r('.recipe-header img').attr('src');
-            const absoluteImageUrl = imageUrl ? new URL(imageUrl, link).href : null;
+        const sentDb = JSON.parse(fs.readFileSync(SENT_DB));
+        const newRecipes = force ? [recipeLinks[0]] : recipeLinks.filter(link => !sentDb.includes(link)).slice(0, 1); 
 
-            // Estrazione Messaggio Share
-            const shareOnClick = $r('#mainShareBtn').attr('onclick');
-            if (!shareOnClick) continue;
-            
-            // Estrazione e decodifica corretta della stringa JS
-            const matches = shareOnClick.match(/unifiedShare\s*\(\s*(?:"|').*?(?:"|')\s*,\s*"((?:\\"|[^"])*)"/);
-            let message = null;
-            if (matches) {
-                try {
-                    // Usiamo JSON.parse per decodificare correttamente unicode ed escape
-                    message = JSON.parse(`"${matches[1]}"`);
-                } catch (e) {
-                    // Fallback se JSON.parse fallisce
+        if (newRecipes.length === 0) {
+            console.log("✅ Nessuna nuova ricetta da pubblicare.");
+            return;
+        }
+
+        for (const link of newRecipes) {
+            try {
+                console.log(`📖 Analisi ricetta: ${link}`);
+                const recipePage = await axios.get(link);
+                const $r = cheerio.load(recipePage.data);
+                
+                const imageUrl = $r('meta[property="og:image"]').attr('content') || $r('.recipe-header img').attr('src');
+                const absoluteImageUrl = imageUrl ? new URL(imageUrl, link).href : null;
+
+                const shareBtn = $r('#mainShareBtn');
+                if (shareBtn.length === 0) {
+                    console.log("⚠️ Pulsante share non trovato, salto.");
+                    continue;
+                }
+                
+                const shareOnClick = shareBtn.attr('onclick');
+                const decodedOnClick = shareOnClick.replace(/&quot;/g, '"');
+                
+                const matches = decodedOnClick.match(/unifiedShare\s*\(\s*".*?"\s*,\s*"(.*?)"\s*,/);
+                let message = null;
+                if (matches) {
                     message = matches[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\//g, '/');
                 }
-            }
 
-            if (message && sock && sock.user) {
-                // Miglioriamo ulteriormente il formato: Titolo in Grassetto
-                // Assumiamo che la prima riga sia il titolo
-                const lines = message.split('\n');
-                if (lines.length > 0) {
-                    lines[0] = `*${lines[0].trim()}*`;
-                    message = lines.join('\n');
+                if (!message) {
+                    console.log("⚠️ Impossibile estrarre il messaggio dalla ricetta, salto.");
+                    continue;
                 }
-                console.log(`🚀 Pubblicazione ricetta con foto: ${link}`);
-                
-                if (absoluteImageUrl) {
-                    // Invio con FOTO
-                    await sock.sendMessage(channelId, { 
-                        image: { url: absoluteImageUrl },
-                        caption: message
-                    });
+
+                if (sock && sock.user) {
+                    const lines = message.split('\n');
+                    if (lines.length > 0) {
+                        lines[0] = `*${lines[0].trim()}*`;
+                        message = lines.join('\n');
+                    }
+
+                    console.log(`🚀 Inviando a WhatsApp: ${lines[0]}`);
+                    
+                    if (absoluteImageUrl) {
+                        await sock.sendMessage(channelId, { 
+                            image: { url: absoluteImageUrl },
+                            caption: message
+                        });
+                    } else {
+                        await sock.sendMessage(channelId, { text: message });
+                    }
+
+                    if (!force) {
+                        sentDb.push(link);
+                        fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
+                    }
+                    console.log("✅ Ricetta pubblicata con successo!");
                 } else {
-                    // Solo testo se manca foto
-                    await sock.sendMessage(channelId, { text: message });
+                    console.log("❌ Bot non ancora connesso a WhatsApp.");
                 }
-
-                if (!force) {
-                    sentDb.push(link);
-                    fs.writeFileSync(SENT_DB, JSON.stringify(sentDb.slice(-100)));
-                }
+            } catch (err) {
+                console.error(`❌ Errore durante l'elaborazione di ${link}:`, err.message);
             }
-        } catch (err) {
-            console.error(`❌ Errore ricetta ${link}:`, err.message);
         }
+    } catch (e) {
+        console.error(`❌ Errore durante il caricamento della home:`, e.message);
     }
 }

@@ -216,7 +216,7 @@ async function startAutomation() {
 }
 
 async function checkAndPublish(force = false) {
-    const sourceUrl = process.env.WEB_SOURCE_URL || 'https://fastreview.uk/AFD/index.php';
+    const sourceUrl = process.env.WEB_SOURCE_URL || 'https://fastreview.uk/AFD/index.php?api=1';
     let channelId = process.env.WA_CHANNEL_ID;
 
     if (!channelId || channelId.trim() === "" || channelId.startsWith('http')) {

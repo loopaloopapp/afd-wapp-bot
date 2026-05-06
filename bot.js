@@ -11,7 +11,7 @@ const pino = require('pino');
 const Redis = require('ioredis');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const AUTH_DIR = path.join(__dirname, '.wwebjs_auth');
 
 const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;

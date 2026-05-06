@@ -112,6 +112,24 @@ app.get('/test-send', async (req, res) => {
     } catch (e) { res.status(500).send(e.message); }
 });
 
+app.get('/publish', async (req, res) => {
+    try {
+        await checkAndPublish(true);
+        res.send('OK – forced publish');
+    } catch (e) {
+        console.error('Bot publish error:', e);
+        res.status(500).send('Bot error');
+    }
+});
+
+app.get('/ping', (req, res) => {
+    if (sock && sock.user) {
+        res.send('pong');
+    } else {
+        res.status(503).send('Bot not connected');
+    }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server on port ${PORT}`);
     setTimeout(connectToWhatsApp, 5000);

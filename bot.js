@@ -170,6 +170,11 @@ async function connectToWhatsApp() {
                 await sock.sendMessage(sender, { text: 'pong! 🏓 I am alive and healthy.' });
             } else if (body.toLowerCase() === 'status') {
                 await sock.sendMessage(sender, { text: `🤖 *Bot Status:* ${botStatus}\n📅 *Date:* ${new Date().toLocaleString()}` });
+            } else if (body.toLowerCase() === '!jid') {
+                await sock.sendMessage(sender, { text: `🆔 *Chat ID:* ${sender}` });
+            } else if (body.toLowerCase() === '!force') {
+                await sock.sendMessage(sender, { text: `🚀 *Forcing publication check...*` });
+                await checkAndPublish(true);
             }
         }
     });

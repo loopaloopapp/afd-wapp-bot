@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, initAuthCreds, BufferJSON, proto } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const axios = require('axios');
 const cheerio = require('cheerio');
@@ -14,92 +14,85 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const AUTH_DIR = path.join(__dirname, '.wwebjs_auth');
 
-// Redis client
-const redis = new Redis(process.env.REDIS_URL);
+const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
 
-// Fallback locale se Redis non disponibile
 if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 
 let lastQrData = null;
 let botStatus = 'Initializing... ⚙️';
 let sock = null;
 
-// --- REDIS HELPERS ---
+async function useRedisAuthState() {
+    const writeData = async (data, key) => {
+        await redis.set(`afd:${key}`, JSON.stringify(data, BufferJSON.replacer));
+    };
+
+    const readData = async (key) => {
+        const data = await redis.get(`afd:${key}`);
+        return data ? JSON.parse(data, BufferJSON.reviver) : null;
+    };
+
+    let creds = await readData('creds');
+    if (!creds) {
+        creds = initAuthCreds();
+        await writeData(creds, 'creds');
+    }
+
+    return {
+        state: {
+            creds,
+            keys: {
+                get: async (type, ids) => {
+                    const data = {};
+                    await Promise.all(ids.map(async (id) => {
+                        let value = await readData(`${type}-${id}`);
+                        if (type === 'app-state-sync-key' && value) {
+                            value = proto.Message.AppStateSyncKeyData.fromObject(value);
+                        }
+                        data[id] = value;
+                    }));
+                    return data;
+                },
+                set: async (data) => {
+                    await Promise.all(
+                        Object.entries(data).flatMap(([type, ids]) =>
+                            Object.entries(ids).map(([id, value]) =>
+                                value
+                                    ? writeData(value, `${type}-${id}`)
+                                    : redis.del(`afd:${type}-${id}`)
+                            )
+                        )
+                    );
+                }
+            }
+        },
+        saveCreds: () => writeData(creds, 'creds')
+    };
+}
+
 async function getSentRecipes() {
     try {
-        const data = await redis.get('afd:sent_recipes');
-        return data ? JSON.parse(data) : [];
-    } catch (e) {
-        console.error('Redis error, using local fallback:', e.message);
-        const localPath = path.join(AUTH_DIR, 'sent_recipes.json');
-        if (!fs.existsSync(localPath)) fs.writeFileSync(localPath, JSON.stringify([]));
-        return JSON.parse(fs.readFileSync(localPath));
-    }
+        if (redis) {
+            const data = await redis.get('afd:sent_recipes');
+            return data ? JSON.parse(data) : [];
+        }
+    } catch (e) {}
+    const localPath = path.join(AUTH_DIR, 'sent_recipes.json');
+    if (!fs.existsSync(localPath)) fs.writeFileSync(localPath, JSON.stringify([]));
+    return JSON.parse(fs.readFileSync(localPath));
 }
 
 async function saveSentRecipes(recipes) {
     try {
-        await redis.set('afd:sent_recipes', JSON.stringify(recipes.slice(-100)));
-    } catch (e) {
-        console.error('Redis error, saving locally:', e.message);
-        const localPath = path.join(AUTH_DIR, 'sent_recipes.json');
-        fs.writeFileSync(localPath, JSON.stringify(recipes.slice(-100)));
-    }
+        if (redis) {
+            await redis.set('afd:sent_recipes', JSON.stringify(recipes.slice(-100)));
+            return;
+        }
+    } catch (e) {}
+    const localPath = path.join(AUTH_DIR, 'sent_recipes.json');
+    fs.writeFileSync(localPath, JSON.stringify(recipes.slice(-100)));
 }
 
-// --- REDIS AUTH STATE ---
-async function useRedisAuthState() {
-    const KEY = 'afd:wa_creds';
-
-    async function readData() {
-        try {
-            const data = await redis.get(KEY);
-            return data ? JSON.parse(data) : {};
-        } catch (e) {
-            return {};
-        }
-    }
-
-    async function writeData(data) {
-        try {
-            await redis.set(KEY, JSON.stringify(data));
-        } catch (e) {
-            console.error('Error saving creds to Redis:', e.message);
-        }
-    }
-
-    const data = await readData();
-
-    const state = {
-        creds: data.creds || {},
-        keys: {
-            get: async (type, ids) => {
-                const result = {};
-                for (const id of ids) {
-                    const val = data.keys?.[type]?.[id];
-                    if (val) result[id] = val;
-                }
-                return result;
-            },
-            set: async (newData) => {
-                for (const category in newData) {
-                    data.keys = data.keys || {};
-                    data.keys[category] = data.keys[category] || {};
-                    Object.assign(data.keys[category], newData[category]);
-                }
-                await writeData(data);
-            }
-        }
-    };
-
-    const saveCreds = async () => {
-        await writeData(data);
-    };
-
-    return { state, saveCreds };
-}
-
-// --- WEB INTERFACE ---
 app.get('/health', (req, res) => res.status(200).send('OK'));
 app.get('/', async (req, res) => {
     if (lastQrData) {
@@ -124,13 +117,17 @@ app.listen(PORT, '0.0.0.0', () => {
     setTimeout(connectToWhatsApp, 5000);
 });
 
-// --- WHATSAPP LOGIC ---
 async function connectToWhatsApp() {
     let state, saveCreds;
 
-    if (process.env.REDIS_URL) {
+    if (redis) {
         console.log('🔴 Using Redis for session storage');
-        ({ state, saveCreds } = await useRedisAuthState());
+        try {
+            ({ state, saveCreds } = await useRedisAuthState());
+        } catch (e) {
+            console.error('Redis auth error, falling back to local:', e.message);
+            ({ state, saveCreds } = await useMultiFileAuthState(AUTH_DIR));
+        }
     } else {
         console.log('📁 Using local file for session storage');
         ({ state, saveCreds } = await useMultiFileAuthState(AUTH_DIR));
@@ -157,14 +154,11 @@ async function connectToWhatsApp() {
         if (connection === 'close') {
             const statusCode = (lastDisconnect?.error instanceof Boom) ? lastDisconnect.error.output?.statusCode : 0;
             botStatus = 'Reconnecting... 🔄';
-            if (statusCode !== DisconnectReason.loggedOut) {
-                setTimeout(connectToWhatsApp, 5000);
-            } else {
-                console.log('❌ Disconnesso da WhatsApp, necessaria nuova autenticazione');
-                // Cancella sessione Redis per forzare nuovo QR
-                if (process.env.REDIS_URL) redis.del('afd:wa_creds');
-                setTimeout(connectToWhatsApp, 5000);
+            if (statusCode === DisconnectReason.loggedOut) {
+                console.log('❌ Logged out, clearing session');
+                if (redis) redis.del('afd:creds');
             }
+            setTimeout(connectToWhatsApp, 5000);
         } else if (connection === 'open') {
             lastQrData = null;
             botStatus = 'Bot is Active! ✅';

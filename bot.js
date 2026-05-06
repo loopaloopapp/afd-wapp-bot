@@ -143,27 +143,60 @@ async function connectToWhatsApp() {
         version,
         auth: state,
         logger: pino({ level: 'error' }),
-        browser: ['Mac OS', 'Chrome', '121.0.6167.184'],
-        printQRInTerminal: false
+        browser: ['Air Fryer Bot', 'Chrome', '121.0.6167.184'],
+        printQRInTerminal: false,
+        generateHighQualityLinkPreview: true
     });
 
-    console.log('🔌 Socket created, waiting...');
-sock.ev.on('creds.update', saveCreds);
+    console.log('🔌 Socket created, waiting for connection...');
+    
+    sock.ev.on('creds.update', saveCreds);
+
+    // MESSAGE LISTENER - FIX: Added this to handle incoming messages
+    sock.ev.on('messages.upsert', async m => {
+        if (m.type !== 'notify') return;
+        
+        for (const msg of m.messages) {
+            if (!msg.message || msg.key.fromMe) continue;
+            
+            const sender = msg.key.remoteJid;
+            const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+            const pushName = msg.pushName || 'User';
+            
+            console.log(`📩 Message from ${pushName} (${sender}): ${body}`);
+            
+            // Simple auto-reply for testing
+            if (body.toLowerCase() === 'ping') {
+                await sock.sendMessage(sender, { text: 'pong! 🏓 I am alive and healthy.' });
+            } else if (body.toLowerCase() === 'status') {
+                await sock.sendMessage(sender, { text: `🤖 *Bot Status:* ${botStatus}\n📅 *Date:* ${new Date().toLocaleString()}` });
+            }
+        }
+    });
+
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
-        if (qr) { lastQrData = qr; botStatus = 'Waiting for Scan... 📷'; }
+        if (qr) { 
+            lastQrData = qr; 
+            botStatus = 'Waiting for Scan... 📷'; 
+            console.log('⚡ New QR Code generated, please scan at the web URL.');
+        }
+        
         if (connection === 'close') {
             const statusCode = (lastDisconnect?.error instanceof Boom) ? lastDisconnect.error.output?.statusCode : 0;
+            console.log(`🔌 Connection closed (Status: ${statusCode}). Reconnecting...`);
             botStatus = 'Reconnecting... 🔄';
-            if (statusCode === DisconnectReason.loggedOut) {
-                console.log('❌ Logged out, clearing session');
-                if (redis) redis.del('afd:creds');
+            
+            if (statusCode !== DisconnectReason.loggedOut) {
+                setTimeout(connectToWhatsApp, 5000);
+            } else {
+                console.log('❌ Logged out, please delete session files/redis and restart to get a new QR.');
+                botStatus = 'Logged Out! ❌';
             }
-            setTimeout(connectToWhatsApp, 5000);
         } else if (connection === 'open') {
             lastQrData = null;
             botStatus = 'Bot is Active! ✅';
-            console.log('✅ WhatsApp Connesso');
+            console.log(`✅ WhatsApp Connesso! Logged in as: ${sock.user.id}`);
             startAutomation();
         }
     });
@@ -178,7 +211,7 @@ async function startAutomation() {
 }
 
 async function checkAndPublish(force = false) {
-    const sourceUrl = process.env.WEB_SOURCE_URL;
+    const sourceUrl = process.env.WEB_SOURCE_URL || 'https://fastreview.uk/AFD/index.php';
     let channelId = process.env.WA_CHANNEL_ID;
 
     if (!channelId || channelId.trim() === "" || channelId.startsWith('http')) {

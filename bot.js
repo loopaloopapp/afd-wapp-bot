@@ -147,7 +147,8 @@ async function connectToWhatsApp() {
         printQRInTerminal: false
     });
 
-    sock.ev.on('creds.update', saveCreds);
+    console.log('🔌 Socket created, waiting...');
+sock.ev.on('creds.update', saveCreds);
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         if (qr) { lastQrData = qr; botStatus = 'Waiting for Scan... 📷'; }

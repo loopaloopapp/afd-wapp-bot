@@ -71,7 +71,7 @@ async function useRedisAuthState() {
     const data = await readData();
 
     const state = {
-        creds: data.creds || {},
+        creds: data.creds || require("@whiskeysockets/baileys").initAuthCreds(),
         keys: {
             get: async (type, ids) => {
                 const result = {};
